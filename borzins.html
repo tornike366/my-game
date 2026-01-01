@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Cyber Survivor</title>
+<style>
+body{
+  margin:0;
+  background:radial-gradient(circle,#0f172a,#020617);
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  height:100vh;
+  font-family:Arial;
+  color:white;
+}
+canvas{
+  background:#020617;
+  border-radius:14px;
+  box-shadow:0 0 40px rgba(0,255,255,.25);
+}
+#ui{
+  position:absolute;
+  top:10px;
+  width:600px;
+  display:flex;
+  justify-content:space-between;
+}
+#healthBar{
+  width:180px;height:12px;
+  background:#1f2933;border-radius:6px;overflow:hidden
+}
+#health{height:100%;background:#22c55e;width:100%}
+#shop{
+  position:absolute;
+  background:rgba(0,0,0,.9);
+  padding:18px;
+  border-radius:12px;
+  display:none;
+  text-align:center;
+}
+button{width:220px;margin:6px;padding:8px;cursor:pointer}
+</style>
+</head>
+
+<body>
+
+<div id="ui">
+  <div>Score: <span id="score">0</span></div>
+  <div>Round: <span id="round">1</span></div>
+  <div id="healthBar"><div id="health"></div></div>
+</div>
+
+<div id="shop">
+  <h3>SHOP</h3>
+  <button id="speedBtn"></button>
+  <hr>
+  <button id="pistolBtn"></button>
+  <button id="smgBtn"></button>
+  <button id="shotgunBtn"></button>
+  <button id="laserBtn"></button>
+  <hr>
+  <button id="upgradeBtn"></button>
+  <p>B to close</p>
+</div>
+
+<canvas id="game" width="600" height="600"></canvas>
+
+<script>
+/* ================= SETUP ================= */
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+const scoreEl=document.getElementById("score");
+const roundEl=document.getElementById("round");
+const healthEl=document.getElementById("health");
+const shop=document.getElementById("shop");
+
+let score=0, round=1, shopOpen=false, gameOver=false;
+let bullets=[], enemies=[];
+let fireCooldown=0, spawnTimer=0;
+const keys={}, mouse={x:300,y:300};
+
+/* ================= PLAYER ================= */
+const player={
+  x:300,y:450,size:18,speed:4,
+  health:100,maxHealth:100,
+  weapon:"starter",level:1
+};
+
+/* ================= WEAPONS ================= */
+const weapons={
+  starter:{rate:28,pellets:1,spread:0,speed:8,damage:0.5},
+  pistol:{rate:20,pellets:1,spread:0,speed:10,damage:1},
+  smg:{rate:6,pellets:1,spread:0,speed:13,damage:0.6},
+  shotgun:{rate:40,pellets:6,spread:0.25,speed:9,damage:0.8},
+  laser:{rate:45,pellets:1,spread:0,speed:0,damage:2}
+};
+
+/* ================= INPUT ================= */
+document.addEventListener("keydown",e=>{
+  keys[e.key.toLowerCase()]=true;
+  if(e.key==="b"||e.key==="B") shopOpen=!shopOpen;
+  if(gameOver&&e.code==="Space") location.reload();
+});
+document.addEventListener("keyup",e=>keys[e.key.toLowerCase()]=false);
+canvas.addEventListener("mousemove",e=>{
+  const r=canvas.getBoundingClientRect();
+  mouse.x=e.clientX-r.left;
+  mouse.y=e.clientY-r.top;
+});
+
+/* ================= SHOOT ================= */
+canvas.addEventListener("mousedown",()=>{
+  if(shopOpen||fireCooldown>0) return;
+  const w=weapons[player.weapon];
+  fireCooldown=w.rate;
+  const a=Math.atan2(mouse.y-player.y,mouse.x-player.x);
+
+  if(player.weapon==="laser"){
+    bullets.push({type:"laser",x:player.x,y:player.y,dx:Math.cos(a),dy:Math.sin(a),life:6});
+  }else{
+    for(let i=0;i<w.pellets;i++){
+      let o=(i-(w.pellets-1)/2)*w.spread;
+      bullets.push({
+        type:player.weapon,
+        x:player.x,y:player.y,
+        dx:Math.cos(a+o)*w.speed,
+        dy:Math.sin(a+o)*w.speed,
+        life:60
+      });
+    }
+  }
+});
+
+/* ================= ENEMIES ================= */
+function spawnEnemy(){
+  enemies.push({
+    x:Math.random()*560+20,
+    y:-30,
+    size:16,
+    hp:Math.max(1,Math.floor(1+round*0.9)),
+    speed:1.2+round*0.25
+  });
+}
+
+/* ================= UPDATE ================= */
+function update(){
+  if(shopOpen||gameOver) return;
+
+  if(keys.w||keys.arrowup) player.y-=player.speed;
+  if(keys.s||keys.arrowdown) player.y+=player.speed;
+  if(keys.a||keys.arrowleft) player.x-=player.speed;
+  if(keys.d||keys.arrowright) player.x+=player.speed;
+
+  player.x=Math.max(20,Math.min(580,player.x));
+  player.y=Math.max(20,Math.min(580,player.y));
+
+  spawnTimer++;
+  if(spawnTimer>Math.max(25,80-round*6)){spawnEnemy();spawnTimer=0;}
+
+  bullets.forEach(b=>{
+    if(b.type!=="laser"){b.x+=b.dx;b.y+=b.dy;}
+    b.life--;
+  });
+  bullets=bullets.filter(b=>b.life>0);
+
+  for(let i=enemies.length-1;i>=0;i--){
+    let e=enemies[i];
+    e.y+=e.speed;
+
+    for(let j=bullets.length-1;j>=0;j--){
+      let b=bullets[j];
+      let hit=b.type==="laser"
+        ? Math.abs((e.x-b.x)*b.dy-(e.y-b.y)*b.dx)<e.size+4
+        : Math.hypot(b.x-e.x,b.y-e.y)<e.size+4;
+      if(hit){
+        e.hp-=weapons[b.type].damage;
+        if(b.type!=="laser") bullets.splice(j,1);
+      }
+    }
+
+    if(Math.hypot(player.x-e.x,player.y-e.y)<player.size+e.size){
+      player.health-=38;
+      e.hp=0;
+      if(player.health<=0) gameOver=true;
+    }
+
+    if(e.hp<=0){score++;enemies.splice(i,1);}
+  }
+
+  fireCooldown=Math.max(0,fireCooldown-1);
+  if(score>=round*15) round++;
+
+  scoreEl.textContent=score;
+  roundEl.textContent=round;
+  healthEl.style.width=(player.health/player.maxHealth*100)+"%";
+}
+
+/* ================= DRAW ================= */
+function draw(){
+  ctx.clearRect(0,0,600,600);
+
+  ctx.fillStyle="#22d3ee";
+  ctx.beginPath();
+  ctx.moveTo(player.x,player.y-20);
+  ctx.lineTo(player.x+14,player.y+14);
+  ctx.lineTo(player.x-14,player.y+14);
+  ctx.closePath();
+  ctx.fill();
+
+  const a=Math.atan2(mouse.y-player.y,mouse.x-player.x);
+  ctx.save();
+  ctx.translate(player.x,player.y);
+  ctx.rotate(a);
+  ctx.fillStyle="#94a3b8";
+  ctx.fillRect(10,-3,16,6);
+  ctx.restore();
+
+  bullets.forEach(b=>{
+    ctx.fillStyle=b.type==="laser"?"#22c55e":"#facc15";
+    ctx.fillRect(b.x,b.y,4,4);
+  });
+
+  enemies.forEach(e=>{
+    ctx.fillStyle="#ef4444";
+    ctx.beginPath();
+    ctx.arc(e.x,e.y,e.size,0,Math.PI*2);
+    ctx.fill();
+  });
+
+  if(gameOver){
+    ctx.fillStyle="rgba(0,0,0,.7)";
+    ctx.fillRect(0,0,600,600);
+    ctx.fillStyle="#fff";
+    ctx.font="36px Arial";
+    ctx.fillText("GAME OVER",170,280);
+    ctx.font="18px Arial";
+    ctx.fillText("SPACE to Retry",210,320);
+  }
+
+  shop.style.display=shopOpen?"block":"none";
+}
+
+/* ================= SHOP (FIXED SCORE DEDUCTION) ================= */
+let speedCost=10;
+
+speedBtn.onclick=()=>{
+  if(score>=speedCost){
+    score-=speedCost;
+    player.speed+=0.5;
+    speedCost+=10;
+  }
+};
+
+pistolBtn.onclick=()=>{
+  if(score>=15){
+    score-=15;
+    player.weapon="pistol";
+  }
+};
+
+smgBtn.onclick=()=>{
+  if(score>=35){
+    score-=35;
+    player.weapon="smg";
+  }
+};
+
+shotgunBtn.onclick=()=>{
+  if(score>=60){
+    score-=60;
+    player.weapon="shotgun";
+  }
+};
+
+laserBtn.onclick=()=>{
+  if(score>=100){
+    score-=100;
+    player.weapon="laser";
+  }
+};
+
+upgradeBtn.onclick=()=>{
+  if(score>=25){
+    score-=25;
+    player.level++;
+  }
+};
+
+/* ================= LOOP ================= */
+function loop(){
+  speedBtn.textContent=`Speed +0.5 (${speedCost})`;
+  pistolBtn.textContent="Pistol (15)";
+  smgBtn.textContent="SMG (35)";
+  shotgunBtn.textContent="Shotgun (60)";
+  laserBtn.textContent="Laser (100)";
+  upgradeBtn.textContent="Upgrade (25)";
+  update(); draw(); requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>
